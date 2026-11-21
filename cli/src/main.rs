@@ -1,6 +1,8 @@
 mod cli;
 mod config;
 mod errors;
+mod freebox;
+
 use crate::cli::Commands;
 use crate::errors::Result;
 use clap::Parser;
