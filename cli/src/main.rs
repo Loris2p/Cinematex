@@ -4,6 +4,7 @@
 mod cli;
 mod config;
 mod errors;
+mod firebase;
 mod freebox;
 
 use crate::cli::Commands;
