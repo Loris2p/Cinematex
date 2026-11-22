@@ -7,6 +7,8 @@ use std::{env, fs};
 pub struct AppConfig {
     pub app_token: Option<String>,
     pub firebase_refresh_token: Option<String>,
+    #[serde(default)]
+    pub media_root:Option<String>
 }
 
 impl AppConfig {

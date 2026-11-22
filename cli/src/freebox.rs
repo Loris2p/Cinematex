@@ -1,11 +1,11 @@
 use crate::errors::{AppError, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::time::Duration;
 use tokio::time;
-
 type HmacSha1 = Hmac<Sha1>;
 const APP_ID: &str = "fr.cinematex.cli";
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -49,24 +49,29 @@ struct AuthorizeStatusResponse {
     status: AuthorizeStatus,
 }
 #[derive(Debug, Deserialize)]
-struct ApiResponse<T> {
+struct ListDirResponse {
+    #[serde(default)]
+    entries: Vec<FileInfo>,
+}
+#[derive(Debug, Deserialize)]
+struct ApiResponse {
     success: bool,
-    result: Option<T>,
+    result: Option<serde_json::Value>,
     msg: Option<String>,
     error_code: Option<String>,
 }
-impl<T> ApiResponse<T> {
-    fn into_result(self) -> Result<T> {
+impl ApiResponse {
+    fn into_result<T: DeserializeOwned>(self) -> Result<T> {
         self.into_optional_result()?
             .ok_or_else(|| AppError::FreeboxApi("champ result manquant".to_string()))
     }
-    fn into_optional_result(self) -> Result<Option<T>> {
+    fn into_optional_result<T: DeserializeOwned>(self) -> Result<Option<T>> {
         if !self.success {
             let code = self.error_code.as_deref().unwrap_or("unknown");
             let msg = self.msg.as_deref().unwrap_or("erreur inconnue");
             return Err(AppError::FreeboxApi(format!("{code}: {msg}")));
         }
-        Ok(self.result)
+        Ok(self.result.map(serde_json::from_value).transpose()?)
     }
 }
 #[derive(Debug, Deserialize)]
@@ -163,9 +168,9 @@ impl FreeboxClient {
             .send()
             .await?
             .error_for_status()?
-            .json::<ApiResponse<AuthorizeResponse>>()
+            .json::<ApiResponse>()
             .await?
-            .into_result()?;
+            .into_result::<AuthorizeResponse>()?;
         println!("Merci de confirmer la connexion physiquement sur la freebox...");
         let status_url = format!("{}/login/authorize/{}", self.api_base, auth.track_id);
         loop {
@@ -175,9 +180,9 @@ impl FreeboxClient {
                 .send()
                 .await?
                 .error_for_status()?
-                .json::<ApiResponse<AuthorizeStatusResponse>>()
+                .json::<ApiResponse>()
                 .await?
-                .into_result()?;
+                .into_result::<AuthorizeStatusResponse>()?;
 
             match auth_response.status {
                 AuthorizeStatus::Pending => time::sleep(Duration::from_secs(2)).await,
@@ -207,9 +212,9 @@ impl FreeboxClient {
             .send()
             .await?
             .error_for_status()?
-            .json::<ApiResponse<LoginResponse>>()
+            .json::<ApiResponse>()
             .await?
-            .into_result()?;
+            .into_result::<LoginResponse>()?;
         let password = compute_password(app_token, &login.challenge)?;
         let session_request = SessionRequest {
             app_id: APP_ID,
@@ -223,9 +228,9 @@ impl FreeboxClient {
             .send()
             .await?
             .error_for_status()?
-            .json::<ApiResponse<SessionResponse>>()
+            .json::<ApiResponse>()
             .await?
-            .into_result()?;
+            .into_result::<SessionResponse>()?;
         self.session_token = Some(session.session_token);
         Ok(())
     }
@@ -244,10 +249,14 @@ impl FreeboxClient {
             .send()
             .await?
             .error_for_status()?
-            .json::<ApiResponse<Vec<FileInfo>>>()
+            .json::<ApiResponse>()
             .await?
-            .into_optional_result()?
-            .unwrap_or_default();
+            .into_optional_result::<ListDirResponse>()?
+            .map(|r| r.entries)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| e.name != "." && e.name != "..")
+            .collect();
         Ok(res)
     }
 }

@@ -23,7 +23,7 @@ pub enum Commands {
     /// Scanner un dossier de la Freebox et indexer les vidéos dans Firestore
     Scan {
         /// Chemin du dossier sur la Freebox (ex: /Disque dur/Films)
-        path: String,
+        path: Option<String>,
     },
     /// Gestion des profils utilisateurs
     Profile {
