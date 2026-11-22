@@ -61,6 +61,20 @@ struct SignInResponse {
     refresh_token: String,
     expires_in: String,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct RefreshTokenRequest<'a> {
+    grant_type: &'a str,
+    refresh_token: &'a str,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct RefreshTokenResponse {
+    id_token: String,
+    refresh_token: String,
+    expires_in: String,
+}
+
 impl FirebaseClient {
     pub fn new(project_id: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
         Self::with_base_urls(
@@ -121,5 +135,38 @@ impl FirebaseClient {
         self.id_token = Some(data.id_token);
         self.expires_at = Some(end);
         Ok(data.refresh_token)
+    }
+    pub async fn refresh_id_token(&mut self) -> Result<()> {
+        let Some(refresh_token) = self.refresh_token.as_deref() else {
+            return Err(AppError::FirebaseAuth(
+                "refresh token manquant...".to_string(),
+            ));
+        };
+        let res = self
+            .http
+            .post(format!("{}/v1/token", self.token_base_url))
+            .query(&[("key", self.api_key.as_str())])
+            .json(&RefreshTokenRequest {
+                grant_type: "refresh_token",
+                refresh_token,
+            })
+            .send()
+            .await?;
+        let data = parse_auth_response::<RefreshTokenResponse>(res).await?;
+        let expires_at = compute_expiry(&data.expires_in)?;
+        self.refresh_token = Some(data.refresh_token);
+        self.expires_at = Some(expires_at);
+        self.id_token = Some(data.id_token);
+        Ok(())
+    }
+    pub(crate) async fn valid_id_token(&mut self) -> Result<&str> {
+        let refresh_required =
+            self.id_token.is_none() || self.expires_at.is_none_or(|exp| Instant::now() >= exp);
+        if refresh_required {
+            self.refresh_id_token().await?;
+        }
+        self.id_token.as_deref().ok_or_else(|| {
+            AppError::FirebaseAuth("impossible de valider l'id du token".to_string())
+        })
     }
 }
