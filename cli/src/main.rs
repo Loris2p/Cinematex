@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 #[expect(dead_code)]
 mod cli;
 mod config;
