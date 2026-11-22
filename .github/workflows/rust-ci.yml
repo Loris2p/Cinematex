@@ -51,24 +51,14 @@ jobs:
         run: cargo test --all-targets
 
   security-audit:
-    name: RustSec Security Audit
+    name: Security & Dependency Audit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-      issues: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Audit cli/Cargo.lock
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: ./cli
-
-      - name: Check dependencies with cargo-deny
+      - name: Check advisories, licenses, bans & sources (cargo-deny)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: cli/Cargo.toml
