@@ -1,9 +1,11 @@
 use crate::errors::{AppError, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::time::Duration;
 use tokio::time;
+
 type HmacSha1 = Hmac<Sha1>;
 const APP_ID: &str = "fr.cinematex.cli";
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -33,7 +35,6 @@ struct AuthorizeResponse {
     app_token: String,
     track_id: u64,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum AuthorizeStatus {
@@ -56,17 +57,18 @@ struct ApiResponse<T> {
 }
 impl<T> ApiResponse<T> {
     fn into_result(self) -> Result<T> {
+        self.into_optional_result()?
+            .ok_or_else(|| AppError::FreeboxApi("champ result manquant".to_string()))
+    }
+    fn into_optional_result(self) -> Result<Option<T>> {
         if !self.success {
             let code = self.error_code.as_deref().unwrap_or("unknown");
             let msg = self.msg.as_deref().unwrap_or("erreur inconnue");
             return Err(AppError::FreeboxApi(format!("{code}: {msg}")));
         }
-
-        self.result
-            .ok_or_else(|| AppError::FreeboxApi("champ result manquant".to_string()))
+        Ok(self.result)
     }
 }
-
 #[derive(Debug, Deserialize)]
 struct LoginResponse {
     challenge: String,
@@ -85,6 +87,31 @@ fn compute_password(app_token: &str, challenge: &str) -> Result<String> {
         .map_err(|e| AppError::FreeboxAuth(format!("clef hmac invalide : {e}")))?;
     mac.update(challenge.as_bytes());
     Ok(hex::encode(mac.finalize().into_bytes()))
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileType {
+    File,
+    Dir,
+}
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileInfo {
+    pub name: String,
+    pub path: String,
+    #[serde(rename = "type")]
+    pub file_type: FileType,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub hidden: bool,
+}
+impl FileInfo {
+    pub fn decoded_path(&self) -> Result<String> {
+        let bytes = STANDARD.decode(&self.path)?;
+        let res = String::from_utf8(bytes)
+            .map_err(|e| AppError::FreeboxApi(format!("chemin utf-8 invalide : {e}")))?;
+        Ok(res)
+    }
 }
 impl FreeboxClient {
     pub async fn connect(base_url: &str) -> Result<Self> {
@@ -206,5 +233,21 @@ impl FreeboxClient {
         self.session_token
             .as_deref()
             .ok_or_else(|| AppError::FreeboxAuth("session freebox non ouverte".to_string()))
+    }
+    pub async fn list_dir(&self, path: &str) -> Result<Vec<FileInfo>> {
+        let token = self.require_session_token()?;
+        let encoded = STANDARD.encode(path);
+        let res = self
+            .http
+            .get(format!("{}/fs/ls/{encoded}", self.api_base))
+            .header(AUTH_HEADER, token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ApiResponse<Vec<FileInfo>>>()
+            .await?
+            .into_optional_result()?
+            .unwrap_or_default();
+        Ok(res)
     }
 }
