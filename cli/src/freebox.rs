@@ -14,7 +14,6 @@ const AUTH_HEADER: &str = "X-Fbx-App-Auth";
 #[derive(Debug)]
 pub struct FreeboxClient {
     http: reqwest::Client,
-    base_url: String,
     api_base: String,
     session_token: Option<String>,
 }
@@ -148,7 +147,6 @@ impl FreeboxClient {
         let api_base = format!("{base_url}/{api_prefix}/v{version}");
         Ok(Self {
             http,
-            base_url,
             api_base,
             session_token: None,
         })
@@ -255,8 +253,12 @@ impl FreeboxClient {
             .map(|r| r.entries)
             .unwrap_or_default()
             .into_iter()
-            .filter(|e| e.name != "." && e.name != "..")
+            .filter(|e| !e.hidden && e.name != "." && e.name != "..")
             .collect();
         Ok(res)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/freebox.rs"]
+mod tests;

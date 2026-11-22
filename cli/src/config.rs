@@ -1,6 +1,6 @@
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -24,6 +24,9 @@ impl AppConfig {
     }
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
+        Self::load_from(&path)
+    }
+    fn load_from(path: &Path) -> Result<Self> {
         if !path.exists() {
             Ok(Self::default())
         } else {
@@ -31,17 +34,20 @@ impl AppConfig {
             Ok(serde_json::from_str(&conf_str)?)
         }
     }
-    pub fn save(&self) -> Result<()>{
+    pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
-        if let Some(parent) = path.parent(){
+        self.save_to(&path)
+    }
+    fn save_to(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
-        fs::write(&path, json)?;
+        fs::write(path, json)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
         }
         Ok(())
     }
@@ -75,3 +81,7 @@ pub fn tmdb_token() -> Result<&'static str> {
     };
     Ok(res)
 }
+
+#[cfg(test)]
+#[path = "tests/config.rs"]
+mod tests;

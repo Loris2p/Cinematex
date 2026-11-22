@@ -84,3 +84,7 @@ pub enum RequestAction {
     /// Rejeter une demande par son ID Firestore
     Reject { id: String },
 }
+
+#[cfg(test)]
+#[path = "tests/cli.rs"]
+mod tests;

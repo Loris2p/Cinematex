@@ -27,3 +27,7 @@ pub enum AppError {
     #[error("erreur tmdb : {0}")]
     Tmdb(String),
 }
+
+#[cfg(test)]
+#[path = "tests/errors.rs"]
+mod tests;
