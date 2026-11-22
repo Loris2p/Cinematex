@@ -6,13 +6,15 @@ mod config;
 mod errors;
 mod firebase;
 mod freebox;
+mod utils;
 
 use crate::cli::Commands;
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
+use crate::firebase::FirebaseClient;
 use crate::freebox::{FileType, FreeboxClient};
 use clap::Parser;
-
+use std::io::{self, Write};
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
@@ -22,14 +24,33 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Auth) => {
             let mut config = AppConfig::load()?;
-            let freebox_env = config::freebox_env()?;
-            let client = FreeboxClient::connect(freebox_env).await?;
-            let token = client.authorize("Cinematex CLI").await?;
-            config.app_token = Some(token);
+            if config.app_token.is_none() {
+                let freebox_env = config::freebox_env()?;
+                let client = FreeboxClient::connect(freebox_env).await?;
+                let token = client.authorize("Cinematex CLI").await?;
+                config.app_token = Some(token);
+                config.save()?;
+                println!(
+                    "Appairage Freebox réussi !\nPensez à activer les droits « Accès aux fichiers » et «Téléchargements » dans Freebox OS."
+                );
+            } else {
+                println!("Freebox déjà appareillée !")
+            }
+            print!("Email admin Firebase :");
+            io::stdout().flush()?;
+            let mut email = String::new();
+            io::stdin().read_line(&mut email)?;
+            let email = email.trim();
+            if email.is_empty() || !utils::is_valid_email(email) {
+                return Err(AppError::FirebaseAuth("email invalide".to_string()));
+            }
+            let password = rpassword::prompt_password("Mot de passe admin Firebase")?;
+            let (project_id, api_key) = config::firebase_env()?;
+            let mut fb = FirebaseClient::new(project_id, api_key)?;
+            let refresh_token = fb.sign_in(email, &password).await?;
+            config.firebase_refresh_token = Some(refresh_token);
             config.save()?;
-            println!(
-                "Appairage Freebox réussi !\nPensez à activer les droits « Accès aux fichiers » et «Téléchargements » dans Freebox OS."
-            );
+            println!("Connecté à Firebase avec succès !");
         }
         Some(Commands::Torrent { .. }) => {
             todo!()

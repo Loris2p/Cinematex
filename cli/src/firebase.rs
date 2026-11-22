@@ -170,3 +170,7 @@ impl FirebaseClient {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "tests/firebase.rs"]
+mod tests;
