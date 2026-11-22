@@ -9,6 +9,12 @@ on:
     paths:
       - "cli/**"
       - ".github/workflows/rust-ci.yml"
+  schedule:
+    # Weekly RustSec audit every Monday at 07:00 UTC
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -43,3 +49,21 @@ jobs:
 
       - name: Run unit tests
         run: cargo test --all-targets
+
+  security-audit:
+    name: RustSec Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Audit cli/Cargo.lock
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: ./cli
