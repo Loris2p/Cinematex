@@ -1,4 +1,6 @@
-use crate::errors::Result;
+use crate::errors::{AppError, Result};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, Instant};
 
 const IDENTITY_TOOLKIT_BASE: &str = "https://identitytoolkit.googleapis.com";
@@ -16,6 +18,48 @@ pub struct FirebaseClient {
     refresh_token: Option<String>,
     id_token: Option<String>,
     expires_at: Option<Instant>,
+}
+#[derive(Deserialize)]
+struct FirebaseErrorEnvelope {
+    error: Option<FirebaseErrorDetail>,
+}
+
+#[derive(Deserialize)]
+struct FirebaseErrorDetail {
+    message: Option<String>,
+}
+async fn parse_auth_response<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+    let status = resp.status();
+    let body = resp.text().await?;
+    if !status.is_success() {
+        let msg = serde_json::from_str::<FirebaseErrorEnvelope>(&body)
+            .ok()
+            .and_then(|e| e.error)
+            .and_then(|e| e.message)
+            .unwrap_or(body);
+        return Err(AppError::FirebaseAuth(format!("HTTP {status}: {msg}")));
+    }
+    Ok(serde_json::from_str(&body)?)
+}
+fn compute_expiry(expires_in: &str) -> Result<Instant> {
+    let secs = expires_in
+        .parse::<u64>()
+        .map_err(|e| AppError::FirebaseAuth(format!("expires_in invalide ({expires_in}): {e}")))?;
+    Ok(Instant::now() + Duration::from_secs(secs.saturating_sub(TOKEN_REFRESH_MARGIN_SECS)))
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SignInRequest<'a> {
+    email: &'a str,
+    password: &'a str,
+    return_secure_token: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignInResponse {
+    id_token: String,
+    refresh_token: String,
+    expires_in: String,
 }
 impl FirebaseClient {
     pub fn new(project_id: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
@@ -55,5 +99,27 @@ impl FirebaseClient {
     pub fn with_refresh_token(mut self, token: impl Into<String>) -> Self {
         self.refresh_token = Some(token.into());
         self
+    }
+    pub async fn sign_in(&mut self, email: &str, password: &str) -> Result<String> {
+        let res = self
+            .http
+            .post(format!(
+                "{}/v1/accounts:signInWithPassword",
+                self.auth_base_url
+            ))
+            .query(&[("key", self.api_key.as_str())])
+            .json(&SignInRequest {
+                email,
+                password,
+                return_secure_token: true,
+            })
+            .send()
+            .await?;
+        let data = parse_auth_response::<SignInResponse>(res).await?;
+        let end = compute_expiry(&data.expires_in)?;
+        self.refresh_token = Some(data.refresh_token.clone());
+        self.id_token = Some(data.id_token);
+        self.expires_at = Some(end);
+        Ok(data.refresh_token)
     }
 }
