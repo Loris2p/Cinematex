@@ -35,7 +35,9 @@ fn converts_external_errors_via_from() {
     assert!(matches!(io_err, AppError::Io(_)));
     assert!(io_err.to_string().contains("entrée sortie"));
 
-    let json_err: AppError = serde_json::from_str::<serde_json::Value>("{").unwrap_err().into();
+    let json_err: AppError = serde_json::from_str::<serde_json::Value>("{")
+        .unwrap_err()
+        .into();
     assert!(matches!(json_err, AppError::Json(_)));
     assert!(json_err.to_string().contains("json"));
 

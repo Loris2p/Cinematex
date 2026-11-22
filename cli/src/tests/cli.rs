@@ -19,7 +19,10 @@ fn parses_ui_and_auth_commands() {
 #[test]
 fn parses_scan_with_and_without_path() {
     let without = Cli::try_parse_from(["cinematex", "scan"]).unwrap();
-    assert!(matches!(without.command, Some(Commands::Scan { path: None })));
+    assert!(matches!(
+        without.command,
+        Some(Commands::Scan { path: None })
+    ));
 
     let with = Cli::try_parse_from(["cinematex", "scan", "/Freebox/Films"]).unwrap();
     assert!(matches!(
@@ -30,7 +33,8 @@ fn parses_scan_with_and_without_path() {
 
 #[test]
 fn parses_torrent_subcommands() {
-    let add = Cli::try_parse_from(["cinematex", "torrent", "add", "magnet:?xt=urn:btih:123"]).unwrap();
+    let add =
+        Cli::try_parse_from(["cinematex", "torrent", "add", "magnet:?xt=urn:btih:123"]).unwrap();
     assert!(matches!(
         add.command,
         Some(Commands::Torrent {

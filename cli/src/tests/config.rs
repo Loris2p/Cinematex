@@ -32,7 +32,10 @@ fn config_json_roundtrip_preserves_all_fields() {
     let decoded: AppConfig = serde_json::from_str(&json).unwrap();
 
     assert_eq!(decoded.app_token.as_deref(), Some("fbx_tok"));
-    assert_eq!(decoded.firebase_refresh_token.as_deref(), Some("fb_refresh"));
+    assert_eq!(
+        decoded.firebase_refresh_token.as_deref(),
+        Some("fb_refresh")
+    );
     assert_eq!(decoded.media_root.as_deref(), Some("/Freebox/Cinematex"));
 }
 

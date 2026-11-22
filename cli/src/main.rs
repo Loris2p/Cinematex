@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#[expect(dead_code)]
 mod cli;
 mod config;
 mod errors;

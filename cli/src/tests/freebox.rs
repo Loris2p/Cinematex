@@ -27,9 +27,7 @@ impl MockResponse {
 
 /// Starts a minimal single-use local HTTP/1.1 mock server serving a scripted sequence of responses.
 /// Also captures each raw HTTP request received for assertions.
-fn spawn_mock_server(
-    responses: Vec<MockResponse>,
-) -> (String, thread::JoinHandle<Vec<String>>) {
+fn spawn_mock_server(responses: Vec<MockResponse>) -> (String, thread::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
     let addr = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
@@ -47,7 +45,9 @@ fn spawn_mock_server(
                 resp.body.len(),
                 resp.body
             );
-            stream.write_all(raw_resp.as_bytes()).expect("write response");
+            stream
+                .write_all(raw_resp.as_bytes())
+                .expect("write response");
             stream.flush().ok();
         }
         requests
@@ -57,8 +57,8 @@ fn spawn_mock_server(
 
 #[test]
 fn compute_password_matches_rfc2202_hmac_sha1_vector() {
-    let digest = compute_password("Jefe", "what do ya want for nothing?")
-        .expect("HMAC-SHA1 should succeed");
+    let digest =
+        compute_password("Jefe", "what do ya want for nothing?").expect("HMAC-SHA1 should succeed");
     assert_eq!(digest, "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
 }
 
@@ -445,7 +445,11 @@ async fn list_dir_sends_auth_header_and_filters_hidden_and_dot_entries() {
 
     let reqs = handle.join().unwrap();
     assert!(reqs[0].starts_with("GET /api/v16/fs/ls/L0ZyZWVib3g= HTTP/"));
-    assert!(reqs[0].to_ascii_lowercase().contains("x-fbx-app-auth: sess_xyz"));
+    assert!(
+        reqs[0]
+            .to_ascii_lowercase()
+            .contains("x-fbx-app-auth: sess_xyz")
+    );
 }
 
 #[tokio::test]
