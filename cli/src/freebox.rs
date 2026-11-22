@@ -1,10 +1,14 @@
 use crate::errors::{AppError, Result};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
+use sha1::Sha1;
 use std::time::Duration;
 use tokio::time;
+type HmacSha1 = Hmac<Sha1>;
 const APP_ID: &str = "fr.cinematex.cli";
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTH_HEADER: &str = "X-Fbx-App-Auth";
 #[derive(Debug)]
 pub struct FreeboxClient {
     http: reqwest::Client,
@@ -61,6 +65,26 @@ impl<T> ApiResponse<T> {
         self.result
             .ok_or_else(|| AppError::FreeboxApi("champ result manquant".to_string()))
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginResponse {
+    challenge: String,
+}
+#[derive(Serialize)]
+struct SessionRequest<'a> {
+    app_id: &'a str,
+    password: &'a str,
+}
+#[derive(Debug, Deserialize)]
+struct SessionResponse {
+    session_token: String,
+}
+fn compute_password(app_token: &str, challenge: &str) -> Result<String> {
+    let mut mac = HmacSha1::new_from_slice(app_token.as_bytes())
+        .map_err(|e| AppError::FreeboxAuth(format!("clef hmac invalide : {e}")))?;
+    mac.update(challenge.as_bytes());
+    Ok(hex::encode(mac.finalize().into_bytes()))
 }
 impl FreeboxClient {
     pub async fn connect(base_url: &str) -> Result<Self> {
@@ -131,17 +155,56 @@ impl FreeboxClient {
             match auth_response.status {
                 AuthorizeStatus::Pending => time::sleep(Duration::from_secs(2)).await,
                 AuthorizeStatus::Granted => return Ok(auth.app_token),
-                AuthorizeStatus::Unknown =>{
-                    return Err(AppError::FreeboxAuth("demande authorisation inconnue ou expirée".to_string()));
-                },
-                AuthorizeStatus::Timeout=>{
-                    return Err(AppError::FreeboxAuth("délai authorisation expiré".to_string()));
-                },
+                AuthorizeStatus::Unknown => {
+                    return Err(AppError::FreeboxAuth(
+                        "demande authorisation inconnue ou expirée".to_string(),
+                    ));
+                }
+                AuthorizeStatus::Timeout => {
+                    return Err(AppError::FreeboxAuth(
+                        "délai authorisation expiré".to_string(),
+                    ));
+                }
                 AuthorizeStatus::Denied => {
-                    return Err(AppError::FreeboxAuth("autorisation refusée sur la freebox".to_string()));
+                    return Err(AppError::FreeboxAuth(
+                        "autorisation refusée sur la freebox".to_string(),
+                    ));
                 }
             }
         }
+    }
+    pub async fn open_session(&mut self, app_token: &str) -> Result<()> {
+        let login = self
+            .http
+            .get(format!("{}/login/", self.api_base))
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ApiResponse<LoginResponse>>()
+            .await?
+            .into_result()?;
+        let password = compute_password(app_token, &login.challenge)?;
+        let session_request = SessionRequest {
+            app_id: APP_ID,
+            password: &password,
+        };
 
+        let session = self
+            .http
+            .post(format!("{}/login/session/", self.api_base))
+            .json(&session_request)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ApiResponse<SessionResponse>>()
+            .await?
+            .into_result()?;
+        self.session_token = Some(session.session_token);
+        Ok(())
+    }
+    fn require_session_token(&self) -> Result<&str> {
+        self.session_token
+            .as_deref()
+            .ok_or_else(|| AppError::FreeboxAuth("session freebox non ouverte".to_string()))
     }
 }
