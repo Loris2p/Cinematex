@@ -6,6 +6,8 @@ mod config;
 mod errors;
 mod firebase;
 mod freebox;
+#[expect(dead_code)]
+mod models;
 mod utils;
 
 use crate::cli::Commands;
