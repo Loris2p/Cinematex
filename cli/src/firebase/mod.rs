@@ -1,5 +1,6 @@
 #[expect(dead_code)]
 pub mod firestore;
+mod firestore_client;
 
 use crate::errors::{AppError, Result};
 use serde::de::DeserializeOwned;
@@ -31,7 +32,10 @@ struct FirebaseErrorEnvelope {
 struct FirebaseErrorDetail {
     message: Option<String>,
 }
-async fn parse_auth_response<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+async fn parse_firebase_response<T: DeserializeOwned>(
+    resp: reqwest::Response,
+    make_err: fn(String) -> AppError,
+) -> Result<T> {
     let status = resp.status();
     let body = resp.text().await?;
     if !status.is_success() {
@@ -40,7 +44,7 @@ async fn parse_auth_response<T: DeserializeOwned>(resp: reqwest::Response) -> Re
             .and_then(|e| e.error)
             .and_then(|e| e.message)
             .unwrap_or(body);
-        return Err(AppError::FirebaseAuth(format!("HTTP {status}: {msg}")));
+        return Err(make_err(format!("HTTP {status}: {msg}")));
     }
     Ok(serde_json::from_str(&body)?)
 }
@@ -132,7 +136,7 @@ impl FirebaseClient {
             })
             .send()
             .await?;
-        let data = parse_auth_response::<SignInResponse>(res).await?;
+        let data = parse_firebase_response::<SignInResponse>(res, AppError::FirebaseAuth).await?;
         let end = compute_expiry(&data.expires_in)?;
         self.refresh_token = Some(data.refresh_token.clone());
         self.id_token = Some(data.id_token);
@@ -155,7 +159,8 @@ impl FirebaseClient {
             })
             .send()
             .await?;
-        let data = parse_auth_response::<RefreshTokenResponse>(res).await?;
+        let data =
+            parse_firebase_response::<RefreshTokenResponse>(res, AppError::FirebaseAuth).await?;
         let expires_at = compute_expiry(&data.expires_in)?;
         self.refresh_token = Some(data.refresh_token);
         self.expires_at = Some(expires_at);
