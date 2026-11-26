@@ -94,8 +94,8 @@ pub struct Media {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Episode {
     pub id: Option<String>,
-    pub season: u32,
-    pub episode: u32,
+    pub season: u64,
+    pub episode: u64,
     pub title: String,
     pub file_path: String,
 }
