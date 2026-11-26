@@ -5,8 +5,6 @@ mod cli;
 mod config;
 mod errors;
 mod firebase;
-#[expect(dead_code)]
-mod firestore;
 mod freebox;
 #[expect(dead_code)]
 mod models;

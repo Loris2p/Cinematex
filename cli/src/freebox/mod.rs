@@ -260,5 +260,5 @@ impl FreeboxClient {
 }
 
 #[cfg(test)]
-#[path = "tests/freebox.rs"]
+#[path = "../tests/freebox.rs"]
 mod tests;

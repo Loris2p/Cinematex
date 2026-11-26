@@ -1,3 +1,6 @@
+#[expect(dead_code)]
+pub mod firestore;
+
 use crate::errors::{AppError, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -172,5 +175,5 @@ impl FirebaseClient {
 }
 
 #[cfg(test)]
-#[path = "tests/firebase.rs"]
+#[path = "../tests/firebase.rs"]
 mod tests;
