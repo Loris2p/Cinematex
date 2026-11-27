@@ -8,8 +8,9 @@ mod firebase;
 mod freebox;
 #[expect(dead_code)]
 mod models;
+#[expect(dead_code)]
+mod tmdb;
 mod utils;
-
 use crate::cli::Commands;
 use crate::config::AppConfig;
 use crate::errors::{AppError, Result};
