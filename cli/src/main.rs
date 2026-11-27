@@ -26,11 +26,11 @@ async fn main() -> Result<()> {
             println!("!TODO! Lancement TUI ... ")
         }
         Some(Commands::Auth) => {
+            let settings = Settings::load()?;
             let store = FileSecretStore::default_store()?;
             let mut secrets = store.load()?;
             if secrets.app_token.is_none() {
-                let freebox_env = config::freebox_env()?;
-                let client = FreeboxClient::connect(freebox_env).await?;
+                let client = FreeboxClient::connect(&settings.freebox, &settings.http).await?;
                 let token = client.authorize("Cinematex CLI").await?;
                 secrets.app_token = Some(token);
                 store.save(&secrets)?;
@@ -50,7 +50,8 @@ async fn main() -> Result<()> {
             }
             let password = rpassword::prompt_password("Mot de passe admin Firebase")?;
             let (project_id, api_key) = config::firebase_env()?;
-            let mut fb = FirebaseClient::new(project_id, api_key)?;
+            let mut fb =
+                FirebaseClient::new(project_id, api_key, &settings.firebase, &settings.http)?;
             let refresh_token = fb.sign_in(email, &password).await?;
             secrets.firebase_refresh_token = Some(refresh_token);
             store.save(&secrets)?;
@@ -62,14 +63,13 @@ async fn main() -> Result<()> {
         Some(Commands::Scan { path }) => {
             let secrets = FileSecretStore::default_store()?.load()?;
             let settings = Settings::load()?;
-            let freebox_env = config::freebox_env()?;
             let Some(app_token) = secrets.app_token.as_deref() else {
                 return Err(AppError::Config("token d'application invalide".to_string()));
             };
-            let Some(target) = path.or(settings.freebox.media_root) else {
+            let Some(target) = path.or(settings.freebox.media_root.clone()) else {
                 return Err(AppError::Config("chemin cible invalide".to_string()));
             };
-            let mut client = FreeboxClient::connect(freebox_env).await?;
+            let mut client = FreeboxClient::connect(&settings.freebox, &settings.http).await?;
             client.open_session(app_token).await?;
             let res = client.list_dir(&target).await?;
             for r in res {

@@ -76,14 +76,34 @@ fn compute_expiry_rejects_non_numeric_input() {
     assert!(matches!(err, AppError::FirebaseAuth(msg) if msg.contains("expires_in invalide")));
 }
 
+fn test_http_settings() -> HttpSettings {
+    HttpSettings {
+        connect_timeout_secs: 5,
+        request_timeout_secs: 15,
+    }
+}
+
+fn mock_firebase_client(base: &str) -> FirebaseClient {
+    let settings = FirebaseSettings {
+        auth_base_url: base.to_string(),
+        token_base_url: base.to_string(),
+        firestore_base_url: base.to_string(),
+    };
+    FirebaseClient::new("proj", "web-api-key", &settings, &test_http_settings()).unwrap()
+}
+
 #[test]
-fn with_base_urls_trims_trailing_slashes() {
-    let client = FirebaseClient::with_base_urls(
+fn new_trims_trailing_slashes_on_base_urls() {
+    let settings = FirebaseSettings {
+        auth_base_url: "http://127.0.0.1:8001///".to_string(),
+        token_base_url: "http://127.0.0.1:8002/".to_string(),
+        firestore_base_url: "http://127.0.0.1:8003/".to_string(),
+    };
+    let client = FirebaseClient::new(
         "cinematex-test",
         "api-key",
-        "http://127.0.0.1:8001///",
-        "http://127.0.0.1:8002/",
-        "http://127.0.0.1:8003/",
+        &settings,
+        &test_http_settings(),
     )
     .unwrap();
     assert_eq!(client.auth_base_url, "http://127.0.0.1:8001");
@@ -99,8 +119,7 @@ async fn sign_in_sends_camel_case_payload_and_stores_tokens() {
         "expiresIn": "3600"
     }))]);
 
-    let mut client =
-        FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base).unwrap();
+    let mut client = mock_firebase_client(&base);
     let refresh = client
         .sign_in("admin@cinematex.fr", "s3cr3t")
         .await
@@ -131,8 +150,7 @@ async fn sign_in_extracts_firebase_error_message_on_http_error() {
     let (base, handle) =
         spawn_mock_server(vec![MockResponse::status("400 Bad Request", &err_body)]);
 
-    let mut client =
-        FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base).unwrap();
+    let mut client = mock_firebase_client(&base);
     let err = client
         .sign_in("admin@cinematex.fr", "wrong")
         .await
@@ -151,8 +169,7 @@ async fn sign_in_falls_back_to_raw_body_on_non_json_error() {
         "upstream down",
     )]);
 
-    let mut client =
-        FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base).unwrap();
+    let mut client = mock_firebase_client(&base);
     let err = client
         .sign_in("admin@cinematex.fr", "secret")
         .await
@@ -166,14 +183,7 @@ async fn sign_in_falls_back_to_raw_body_on_non_json_error() {
 
 #[tokio::test]
 async fn refresh_id_token_requires_refresh_token() {
-    let mut client = FirebaseClient::with_base_urls(
-        "proj",
-        "web-api-key",
-        "http://127.0.0.1:1",
-        "http://127.0.0.1:1",
-        "http://127.0.0.1:1",
-    )
-    .unwrap();
+    let mut client = mock_firebase_client("http://127.0.0.1:1");
 
     let err = client.refresh_id_token().await.unwrap_err();
     assert!(matches!(err, AppError::FirebaseAuth(msg) if msg.contains("refresh token manquant")));
@@ -187,9 +197,7 @@ async fn refresh_id_token_sends_snake_case_payload_and_updates_tokens() {
         "expires_in": "3600"
     }))]);
 
-    let mut client = FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base)
-        .unwrap()
-        .with_refresh_token("old-ref-tok");
+    let mut client = mock_firebase_client(&base).with_refresh_token("old-ref-tok");
     client
         .refresh_id_token()
         .await
@@ -214,8 +222,7 @@ async fn valid_id_token_returns_cached_token_without_network_call() {
         "expiresIn": "3600"
     }))]);
 
-    let mut client =
-        FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base).unwrap();
+    let mut client = mock_firebase_client(&base);
     client.sign_in("admin@cinematex.fr", "pw").await.unwrap();
 
     // Should return the cached token without hitting the mock server a second time
@@ -241,8 +248,7 @@ async fn valid_id_token_auto_refreshes_when_missing_or_expired() {
         })),
     ]);
 
-    let mut client =
-        FirebaseClient::with_base_urls("proj", "web-api-key", &base, &base, &base).unwrap();
+    let mut client = mock_firebase_client(&base);
     client.sign_in("admin@cinematex.fr", "pw").await.unwrap();
 
     let token = client.valid_id_token().await.unwrap();

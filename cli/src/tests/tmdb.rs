@@ -53,20 +53,34 @@ fn spawn_mock_server(responses: Vec<MockResponse>) -> (String, thread::JoinHandl
     (format!("http://{addr}"), handle)
 }
 
+fn test_tmdb_client(token: &str, base_url: &str) -> TmdbClient {
+    let settings = TmdbSettings {
+        base_url: base_url.to_string(),
+        image_base_url: "https://image.tmdb.org/t/p".to_string(),
+        language: "fr-FR".to_string(),
+    };
+    let http_cfg = HttpSettings {
+        connect_timeout_secs: 5,
+        request_timeout_secs: 15,
+    };
+    TmdbClient::new(token, &settings, &http_cfg).expect("client")
+}
+
 #[test]
 fn image_url_helpers_format_paths_and_handle_empty() {
+    let client = test_tmdb_client("tok", "https://api.themoviedb.org/3");
     assert_eq!(
-        poster_url(Some("/poster.jpg")),
+        client.poster_url(Some("/poster.jpg")),
         "https://image.tmdb.org/t/p/w500/poster.jpg"
     );
     assert_eq!(
-        backdrop_url(Some("/backdrop.jpg")),
+        client.backdrop_url(Some("/backdrop.jpg")),
         "https://image.tmdb.org/t/p/w1280/backdrop.jpg"
     );
-    assert_eq!(poster_url(Some("")), "");
-    assert_eq!(poster_url(None), "");
-    assert_eq!(backdrop_url(Some("")), "");
-    assert_eq!(backdrop_url(None), "");
+    assert_eq!(client.poster_url(Some("")), "");
+    assert_eq!(client.poster_url(None), "");
+    assert_eq!(client.backdrop_url(Some("")), "");
+    assert_eq!(client.backdrop_url(None), "");
 }
 
 #[tokio::test]
@@ -84,7 +98,7 @@ async fn search_movie_with_year_sends_bearer_and_query_params() {
         ]
     });
     let (base_url, handle) = spawn_mock_server(vec![MockResponse::ok_json(body)]);
-    let client = TmdbClient::with_base_url("fake-tmdb-token", &base_url).expect("client");
+    let client = test_tmdb_client("fake-tmdb-token", &base_url);
 
     let movies = client
         .search_movie("Inception", Some(2010))
@@ -130,7 +144,7 @@ async fn search_movie_without_year_omits_year_param() {
         ]
     });
     let (base_url, handle) = spawn_mock_server(vec![MockResponse::ok_json(body)]);
-    let client = TmdbClient::with_base_url("tok", &base_url).expect("client");
+    let client = test_tmdb_client("tok", &base_url);
 
     let movies = client
         .search_movie("Matrix", None)
@@ -165,7 +179,7 @@ async fn search_tv_with_year_uses_first_air_date_year() {
         ]
     });
     let (base_url, handle) = spawn_mock_server(vec![MockResponse::ok_json(body)]);
-    let client = TmdbClient::with_base_url("tok", &base_url).expect("client");
+    let client = test_tmdb_client("tok", &base_url);
 
     let shows = client
         .search_tv("Breaking Bad", Some(2008))
@@ -204,7 +218,7 @@ async fn get_season_deserializes_episodes() {
         ]
     });
     let (base_url, handle) = spawn_mock_server(vec![MockResponse::ok_json(body)]);
-    let client = TmdbClient::with_base_url("tok", &base_url).expect("client");
+    let client = test_tmdb_client("tok", &base_url);
 
     let season = client.get_season(1396, 1).await.expect("get_season");
 
@@ -231,7 +245,7 @@ async fn tmdb_error_json_extracts_status_message() {
     .to_string();
     let (base_url, handle) =
         spawn_mock_server(vec![MockResponse::status("401 Unauthorized", &err_body)]);
-    let client = TmdbClient::with_base_url("bad-token", &base_url).expect("client");
+    let client = test_tmdb_client("bad-token", &base_url);
 
     let err = client
         .search_movie("Inception", None)
@@ -254,7 +268,7 @@ async fn tmdb_error_plain_text_falls_back_to_body() {
         "500 Internal Server Error",
         "upstream gateway down",
     )]);
-    let client = TmdbClient::with_base_url("tok", &base_url).expect("client");
+    let client = test_tmdb_client("tok", &base_url);
 
     let err = client
         .get_season(1396, 1)

@@ -1,0 +1,25 @@
+[http]
+connect_timeout_secs = 5
+request_timeout_secs = 15
+
+[freebox]
+base_url = "http://mafreebox.freebox.fr"
+# media_root = "/Disque dur/Films"
+
+[firebase]
+auth_base_url = "https://identitytoolkit.googleapis.com"
+token_base_url = "https://securetoken.googleapis.com"
+firestore_base_url = "https://firestore.googleapis.com"
+
+[tmdb]
+base_url = "https://api.themoviedb.org/3"
+image_base_url = "https://image.tmdb.org/t/p"
+language = "fr-FR"
+
+[indexer]
+video_extensions = ["mkv", "mp4", "avi"]
+max_concurrency = 4
+
+[ui]
+language = "fr"
+refresh_interval_ms = 1000

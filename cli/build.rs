@@ -3,7 +3,6 @@ const ALLOWED_KEYS: &[&str] = &[
     "FIREBASE_PROJECT_ID",
     "FIREBASE_WEB_API_KEY",
     "TMDB_READING_TOKEN",
-    "FREEBOX_URL",
 ];
 fn main() {
     println!("cargo::rerun-if-changed=../.env");

@@ -129,15 +129,15 @@ fn file_secret_store_returns_json_error_on_corrupted_file() {
 }
 
 #[test]
-fn settings_default_has_expected_values() {
-    let settings = Settings::default();
+fn embedded_config_toml_loads_all_expected_values() {
+    let settings = Settings::load().expect("cli/config.toml must deserialize cleanly");
 
-    assert!(settings.freebox.base_url.is_none());
+    assert_eq!(settings.http.connect_timeout_secs, 5);
+    assert_eq!(settings.http.request_timeout_secs, 15);
+
+    assert_eq!(settings.freebox.base_url, "http://mafreebox.freebox.fr");
     assert!(settings.freebox.media_root.is_none());
-    assert_eq!(settings.freebox.connect_timeout_secs, 5);
-    assert_eq!(settings.freebox.request_timeout_secs, 15);
 
-    assert!(settings.firebase.project_id.is_none());
     assert_eq!(
         settings.firebase.auth_base_url,
         "https://identitytoolkit.googleapis.com"
@@ -163,100 +163,51 @@ fn settings_default_has_expected_values() {
 }
 
 #[test]
-fn settings_load_from_returns_default_when_file_missing() {
-    let dir = unique_temp_dir("settings_missing");
-    let path = dir.join("config.toml");
+fn settings_from_toml_parses_custom_values_and_optional_media_root() {
+    let custom = r#"
+[http]
+connect_timeout_secs = 2
+request_timeout_secs = 10
 
-    let settings = Settings::load_from(&path).unwrap();
-    assert_eq!(settings.freebox.connect_timeout_secs, 5);
-    assert_eq!(settings.tmdb.language, "fr-FR");
-    assert_eq!(settings.indexer.max_concurrency, 4);
-}
-
-#[test]
-fn settings_partial_toml_falls_back_to_defaults() {
-    let dir = unique_temp_dir("settings_partial");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("config.toml");
-
-    let partial = r#"
 [freebox]
+base_url = "http://192.168.1.254"
 media_root = "/Disque dur/Films"
 
+[firebase]
+auth_base_url = "http://127.0.0.1:9001"
+token_base_url = "http://127.0.0.1:9002"
+firestore_base_url = "http://127.0.0.1:9003"
+
 [tmdb]
+base_url = "http://127.0.0.1:9004"
+image_base_url = "http://127.0.0.1:9005"
 language = "en-US"
 
 [indexer]
+video_extensions = ["mkv", "webm"]
 max_concurrency = 8
-"#;
-    fs::write(&path, partial).unwrap();
 
-    let settings = Settings::load_from(&path).unwrap();
+[ui]
+language = "en"
+refresh_interval_ms = 500
+"#;
+    let settings = Settings::from_toml(custom).unwrap();
+    assert_eq!(settings.http.connect_timeout_secs, 2);
+    assert_eq!(settings.http.request_timeout_secs, 10);
+    assert_eq!(settings.freebox.base_url, "http://192.168.1.254");
     assert_eq!(
         settings.freebox.media_root.as_deref(),
         Some("/Disque dur/Films")
     );
-    assert!(settings.freebox.base_url.is_none());
-    assert_eq!(settings.freebox.connect_timeout_secs, 5);
-    assert_eq!(settings.freebox.request_timeout_secs, 15);
-
     assert_eq!(settings.tmdb.language, "en-US");
-    assert_eq!(settings.tmdb.base_url, "https://api.themoviedb.org/3");
-
+    assert_eq!(settings.indexer.video_extensions, vec!["mkv", "webm"]);
     assert_eq!(settings.indexer.max_concurrency, 8);
-    assert_eq!(settings.indexer.video_extensions, vec!["mkv", "mp4", "avi"]);
-
-    assert_eq!(settings.ui.language, "fr");
-    assert_eq!(settings.ui.refresh_interval_ms, 1000);
-
-    let _ = fs::remove_dir_all(&dir);
+    assert_eq!(settings.ui.language, "en");
+    assert_eq!(settings.ui.refresh_interval_ms, 500);
 }
 
 #[test]
-fn settings_save_to_and_load_from_roundtrip() {
-    let dir = unique_temp_dir("settings_roundtrip");
-    let path = dir.join("nested").join("config.toml");
-
-    let mut settings = Settings::default();
-    settings.freebox.base_url = Some("http://192.168.1.254".into());
-    settings.freebox.media_root = Some("/Disque dur/Cinematex".into());
-    settings.firebase.project_id = Some("my-project".into());
-    settings.tmdb.language = "en-US".into();
-    settings.indexer.video_extensions = vec!["mkv".into(), "webm".into()];
-    settings.indexer.max_concurrency = 6;
-    settings.ui.language = "en".into();
-    settings.ui.refresh_interval_ms = 500;
-
-    settings.save_to(&path).unwrap();
-
-    let loaded = Settings::load_from(&path).unwrap();
-    assert_eq!(
-        loaded.freebox.base_url.as_deref(),
-        Some("http://192.168.1.254")
-    );
-    assert_eq!(
-        loaded.freebox.media_root.as_deref(),
-        Some("/Disque dur/Cinematex")
-    );
-    assert_eq!(loaded.firebase.project_id.as_deref(), Some("my-project"));
-    assert_eq!(loaded.tmdb.language, "en-US");
-    assert_eq!(loaded.indexer.video_extensions, vec!["mkv", "webm"]);
-    assert_eq!(loaded.indexer.max_concurrency, 6);
-    assert_eq!(loaded.ui.language, "en");
-    assert_eq!(loaded.ui.refresh_interval_ms, 500);
-
-    let _ = fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn settings_load_from_returns_toml_error_on_invalid_file() {
-    let dir = unique_temp_dir("settings_invalid");
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("config.toml");
-    fs::write(&path, "[freebox\nbase_url = ").unwrap();
-
-    let err = Settings::load_from(&path).unwrap_err();
+fn settings_from_toml_returns_toml_error_on_invalid_input() {
+    let err = Settings::from_toml("[freebox\nbase_url = ").unwrap_err();
     assert!(matches!(err, AppError::TomlDe(_)));
-
-    let _ = fs::remove_dir_all(&dir);
 }

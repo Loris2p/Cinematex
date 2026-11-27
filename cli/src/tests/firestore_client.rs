@@ -57,14 +57,17 @@ fn spawn_mock_server(responses: Vec<MockResponse>) -> (String, thread::JoinHandl
 }
 
 fn authenticated_client(firestore_base: &str) -> FirebaseClient {
-    let mut client = FirebaseClient::with_base_urls(
-        "cinematex-test",
-        "fake-api-key",
-        "http://127.0.0.1:1",
-        "http://127.0.0.1:1",
-        firestore_base,
-    )
-    .unwrap();
+    let settings = crate::config::FirebaseSettings {
+        auth_base_url: "http://127.0.0.1:1".to_string(),
+        token_base_url: "http://127.0.0.1:1".to_string(),
+        firestore_base_url: firestore_base.to_string(),
+    };
+    let http_cfg = crate::config::HttpSettings {
+        connect_timeout_secs: 5,
+        request_timeout_secs: 15,
+    };
+    let mut client =
+        FirebaseClient::new("cinematex-test", "fake-api-key", &settings, &http_cfg).unwrap();
     client.id_token = Some("cached-id-token".to_string());
     client.expires_at = Some(Instant::now() + Duration::from_secs(300));
     client

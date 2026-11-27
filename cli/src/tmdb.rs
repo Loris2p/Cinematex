@@ -1,29 +1,32 @@
+use crate::config::{HttpSettings, TmdbSettings};
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, de::DeserializeOwned};
 use std::time::Duration;
 
-const TMDB_API_BASE: &str = "https://api.themoviedb.org/3";
-const TMDB_IMAGE_BASE: &str = "https://image.tmdb.org/t/p";
-const TMDB_LANGUAGE: &str = "fr-FR";
 #[derive(Debug)]
 pub struct TmdbClient {
     http: reqwest::Client,
     token: String,
     base_url: String,
+    image_base_url: String,
+    language: String,
 }
 impl TmdbClient {
-    pub fn new(token: impl Into<String>) -> Result<Self> {
-        Self::with_base_url(token, TMDB_API_BASE)
-    }
-    fn with_base_url(token: impl Into<String>, base_url: &str) -> Result<Self> {
+    pub fn new(
+        token: impl Into<String>,
+        settings: &TmdbSettings,
+        http_cfg: &HttpSettings,
+    ) -> Result<Self> {
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(http_cfg.connect_timeout_secs))
+            .timeout(Duration::from_secs(http_cfg.request_timeout_secs))
             .build()?;
         Ok(Self {
             http,
             token: token.into(),
-            base_url: base_url.trim_end_matches('/').into(),
+            base_url: settings.base_url.trim_end_matches('/').into(),
+            image_base_url: settings.image_base_url.trim_end_matches('/').into(),
+            language: settings.language.clone(),
         })
     }
 }
@@ -73,20 +76,19 @@ pub struct TmdbSeason {
     #[serde(default)]
     pub episodes: Vec<TmdbEpisode>,
 }
-fn image_url(path: Option<&str>, size: &str) -> String {
-    match path {
-        None | Some("") => String::new(),
-        Some(p) => format!("{TMDB_IMAGE_BASE}/{size}{p}"),
-    }
-}
-pub fn poster_url(path: Option<&str>) -> String {
-    image_url(path, "w500")
-}
-pub fn backdrop_url(path: Option<&str>) -> String {
-    image_url(path, "w1280")
-}
-
 impl TmdbClient {
+    fn image_url(&self, path: Option<&str>, size: &str) -> String {
+        match path {
+            None | Some("") => String::new(),
+            Some(p) => format!("{}/{size}{p}", self.image_base_url),
+        }
+    }
+    pub fn poster_url(&self, path: Option<&str>) -> String {
+        self.image_url(path, "w500")
+    }
+    pub fn backdrop_url(&self, path: Option<&str>) -> String {
+        self.image_url(path, "w1280")
+    }
     async fn get_json<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -117,10 +119,7 @@ impl TmdbClient {
         title: impl Into<String>,
         year: Option<u16>,
     ) -> Result<Vec<TmdbMovie>> {
-        let mut query = vec![
-            ("query", title.into()),
-            ("language", TMDB_LANGUAGE.to_string()),
-        ];
+        let mut query = vec![("query", title.into()), ("language", self.language.clone())];
         if let Some(y) = year {
             query.push(("year", y.to_string()));
         }
@@ -134,10 +133,7 @@ impl TmdbClient {
         title: impl Into<String>,
         year: Option<u16>,
     ) -> Result<Vec<TmdbTvShow>> {
-        let mut query = vec![
-            ("query", title.into()),
-            ("language", TMDB_LANGUAGE.to_string()),
-        ];
+        let mut query = vec![("query", title.into()), ("language", self.language.clone())];
         if let Some(y) = year {
             query.push(("first_air_date_year", y.to_string()));
         }
@@ -148,7 +144,7 @@ impl TmdbClient {
     }
     pub async fn get_season(&self, tv_id: u64, season_number: u64) -> Result<TmdbSeason> {
         let path = format!("/tv/{tv_id}/season/{season_number}");
-        let query = [("language", TMDB_LANGUAGE.to_string())];
+        let query = [("language", self.language.clone())];
         self.get_json(&path, &query).await
     }
 }

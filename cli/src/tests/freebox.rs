@@ -278,6 +278,20 @@ fn require_session_token_checks_presence() {
     assert_eq!(client.require_session_token().unwrap(), "tok_secret");
 }
 
+fn test_http_settings() -> HttpSettings {
+    HttpSettings {
+        connect_timeout_secs: 5,
+        request_timeout_secs: 15,
+    }
+}
+
+fn freebox_settings(base_url: impl Into<String>) -> FreeboxSettings {
+    FreeboxSettings {
+        base_url: base_url.into(),
+        media_root: None,
+    }
+}
+
 #[tokio::test]
 async fn connect_parses_major_version_and_trims_trailing_slash() {
     let (base, handle) = spawn_mock_server(vec![MockResponse::ok_json(json!({
@@ -285,7 +299,10 @@ async fn connect_parses_major_version_and_trims_trailing_slash() {
         "api_base_url": "/api/"
     }))]);
 
-    let client = FreeboxClient::connect(&format!("{base}/")).await.unwrap();
+    let client =
+        FreeboxClient::connect(&freebox_settings(format!("{base}/")), &test_http_settings())
+            .await
+            .unwrap();
     assert_eq!(client.api_base, format!("{base}/api/v16"));
     assert!(client.session_token.is_none());
 
@@ -300,7 +317,9 @@ async fn connect_rejects_empty_api_version() {
         "api_base_url": "/api/"
     }))]);
 
-    let err = FreeboxClient::connect(&base).await.unwrap_err();
+    let err = FreeboxClient::connect(&freebox_settings(&base), &test_http_settings())
+        .await
+        .unwrap_err();
     assert!(matches!(err, AppError::FreeboxApi(msg) if msg.contains("version d'api invalide")));
     handle.join().unwrap();
 }
@@ -312,7 +331,9 @@ async fn connect_propagates_http_status_error() {
         "boom",
     )]);
 
-    let err = FreeboxClient::connect(&base).await.unwrap_err();
+    let err = FreeboxClient::connect(&freebox_settings(&base), &test_http_settings())
+        .await
+        .unwrap_err();
     assert!(matches!(err, AppError::Http(_)));
     handle.join().unwrap();
 }
@@ -334,7 +355,9 @@ async fn authorize_returns_app_token_when_granted() {
         })),
     ]);
 
-    let client = FreeboxClient::connect(&base).await.unwrap();
+    let client = FreeboxClient::connect(&freebox_settings(&base), &test_http_settings())
+        .await
+        .unwrap();
     let token = client.authorize("TestBox").await.unwrap();
     assert_eq!(token, "tok_granted_42");
 
@@ -362,7 +385,9 @@ async fn authorize_returns_error_on_denied_timeout_and_unknown() {
             })),
         ]);
 
-        let client = FreeboxClient::connect(&base).await.unwrap();
+        let client = FreeboxClient::connect(&freebox_settings(&base), &test_http_settings())
+            .await
+            .unwrap();
         let err = client.authorize("TestBox").await.unwrap_err();
         assert!(
             matches!(err, AppError::FreeboxAuth(_)),
@@ -393,7 +418,9 @@ async fn open_session_sends_hmac_password_and_stores_token() {
         })),
     ]);
 
-    let mut client = FreeboxClient::connect(&base).await.unwrap();
+    let mut client = FreeboxClient::connect(&freebox_settings(&base), &test_http_settings())
+        .await
+        .unwrap();
     client.open_session(app_token).await.unwrap();
     assert_eq!(client.require_session_token().unwrap(), "sess_abc");
 

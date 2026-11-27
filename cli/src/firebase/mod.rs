@@ -2,14 +2,12 @@
 pub mod firestore;
 mod firestore_client;
 
+use crate::config::{FirebaseSettings, HttpSettings};
 use crate::errors::{AppError, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, Instant};
 
-const IDENTITY_TOOLKIT_BASE: &str = "https://identitytoolkit.googleapis.com";
-const SECURE_TOKEN_BASE: &str = "https://securetoken.googleapis.com";
-const FIRESTORE_BASE: &str = "https://firestore.googleapis.com";
 const TOKEN_REFRESH_MARGIN_SECS: u64 = 60;
 #[derive(Debug)]
 pub struct FirebaseClient {
@@ -83,34 +81,24 @@ struct RefreshTokenResponse {
 }
 
 impl FirebaseClient {
-    pub fn new(project_id: impl Into<String>, api_key: impl Into<String>) -> Result<Self> {
-        Self::with_base_urls(
-            project_id,
-            api_key,
-            IDENTITY_TOOLKIT_BASE,
-            SECURE_TOKEN_BASE,
-            FIRESTORE_BASE,
-        )
-    }
-    fn with_base_urls(
+    pub fn new(
         project_id: impl Into<String>,
         api_key: impl Into<String>,
-        auth_base_url: &str,
-        token_base_url: &str,
-        firestore_base_url: &str,
+        settings: &FirebaseSettings,
+        http_cfg: &HttpSettings,
     ) -> Result<Self> {
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(http_cfg.connect_timeout_secs))
+            .timeout(Duration::from_secs(http_cfg.request_timeout_secs))
             .build()?;
 
         Ok(Self {
             http,
             project_id: project_id.into(),
             api_key: api_key.into(),
-            auth_base_url: auth_base_url.trim_end_matches('/').into(),
-            token_base_url: token_base_url.trim_end_matches('/').into(),
-            firestore_base_url: firestore_base_url.trim_end_matches('/').into(),
+            auth_base_url: settings.auth_base_url.trim_end_matches('/').into(),
+            token_base_url: settings.token_base_url.trim_end_matches('/').into(),
+            firestore_base_url: settings.firestore_base_url.trim_end_matches('/').into(),
             refresh_token: None,
             id_token: None,
             expires_at: None,

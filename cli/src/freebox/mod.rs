@@ -1,3 +1,4 @@
+use crate::config::{FreeboxSettings, HttpSettings};
 use crate::errors::{AppError, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
@@ -118,11 +119,11 @@ impl FileInfo {
     }
 }
 impl FreeboxClient {
-    pub async fn connect(base_url: &str) -> Result<Self> {
-        let base_url = base_url.trim_end_matches('/').to_string();
+    pub async fn connect(settings: &FreeboxSettings, http_cfg: &HttpSettings) -> Result<Self> {
+        let base_url = settings.base_url.trim_end_matches('/').to_string();
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(http_cfg.connect_timeout_secs))
+            .timeout(Duration::from_secs(http_cfg.request_timeout_secs))
             .build()?;
         let url = format!("{base_url}/api_version");
         let version_info = http
