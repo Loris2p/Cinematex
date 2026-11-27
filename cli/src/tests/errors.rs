@@ -53,4 +53,10 @@ fn converts_external_errors_via_from() {
     let hex_err: AppError = hex::decode("zz").unwrap_err().into();
     assert!(matches!(hex_err, AppError::Hex(_)));
     assert!(hex_err.to_string().contains("hexadécimal"));
+
+    let toml_err: AppError = toml::from_str::<toml::Value>("[invalid")
+        .unwrap_err()
+        .into();
+    assert!(matches!(toml_err, AppError::TomlDe(_)));
+    assert!(toml_err.to_string().contains("toml"));
 }

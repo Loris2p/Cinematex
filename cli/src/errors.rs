@@ -26,6 +26,10 @@ pub enum AppError {
     Firestore(String),
     #[error("erreur tmdb : {0}")]
     Tmdb(String),
+    #[error("erreur deserialisation toml : {0}")]
+    TomlDe(#[from] toml::de::Error),
+    #[error("erreur serialisation toml : {0}")]
+    TomlSe(#[from] toml::ser::Error),
 }
 
 #[cfg(test)]
