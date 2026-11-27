@@ -13,65 +13,89 @@ fn unique_temp_dir(label: &str) -> PathBuf {
 }
 
 #[test]
-fn default_config_has_all_fields_none() {
-    let cfg = AppConfig::default();
-    assert!(cfg.app_token.is_none());
-    assert!(cfg.firebase_refresh_token.is_none());
-    assert!(cfg.media_root.is_none());
+fn default_secrets_has_all_fields_none() {
+    let secrets = Secrets::default();
+    assert!(secrets.app_token.is_none());
+    assert!(secrets.firebase_refresh_token.is_none());
 }
 
 #[test]
-fn config_json_roundtrip_preserves_all_fields() {
-    let cfg = AppConfig {
+fn secrets_debug_redacts_tokens() {
+    let populated = Secrets {
+        app_token: Some("super_secret_fbx".to_string()),
+        firebase_refresh_token: Some("super_secret_fb".to_string()),
+    };
+    let dbg = format!("{populated:?}");
+    assert!(!dbg.contains("super_secret_fbx"));
+    assert!(!dbg.contains("super_secret_fb"));
+    assert!(dbg.contains("[REDACTED]"));
+
+    let empty = Secrets::default();
+    let dbg_empty = format!("{empty:?}");
+    assert!(!dbg_empty.contains("[REDACTED]"));
+    assert!(dbg_empty.contains("None"));
+}
+
+#[test]
+fn secrets_zeroize_clears_tokens() {
+    let mut secrets = Secrets {
         app_token: Some("fbx_tok".to_string()),
         firebase_refresh_token: Some("fb_refresh".to_string()),
-        media_root: Some("/Freebox/Cinematex".to_string()),
+    };
+    secrets.zeroize();
+    assert!(secrets.app_token.is_none());
+    assert!(secrets.firebase_refresh_token.is_none());
+}
+
+#[test]
+fn secrets_json_roundtrip_preserves_all_fields() {
+    let secrets = Secrets {
+        app_token: Some("fbx_tok".to_string()),
+        firebase_refresh_token: Some("fb_refresh".to_string()),
     };
 
-    let json = serde_json::to_string_pretty(&cfg).unwrap();
-    let decoded: AppConfig = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string_pretty(&secrets).unwrap();
+    let decoded: Secrets = serde_json::from_str(&json).unwrap();
 
     assert_eq!(decoded.app_token.as_deref(), Some("fbx_tok"));
     assert_eq!(
         decoded.firebase_refresh_token.as_deref(),
         Some("fb_refresh")
     );
-    assert_eq!(decoded.media_root.as_deref(), Some("/Freebox/Cinematex"));
 }
 
 #[test]
-fn config_deserializes_legacy_json_without_media_root() {
+fn secrets_ignores_legacy_media_root_field_in_json() {
     let legacy = r#"{
         "app_token": "legacy_token",
-        "firebase_refresh_token": null
+        "firebase_refresh_token": null,
+        "media_root": "/Freebox/Cinematex"
     }"#;
-    let decoded: AppConfig = serde_json::from_str(legacy).unwrap();
+    let decoded: Secrets = serde_json::from_str(legacy).unwrap();
     assert_eq!(decoded.app_token.as_deref(), Some("legacy_token"));
     assert!(decoded.firebase_refresh_token.is_none());
-    assert!(decoded.media_root.is_none());
 }
 
 #[test]
-fn load_from_returns_default_when_file_missing() {
+fn file_secret_store_returns_default_when_file_missing() {
     let dir = unique_temp_dir("missing");
-    let path = dir.join("config.json");
-    let cfg = AppConfig::load_from(&path).unwrap();
-    assert!(cfg.app_token.is_none());
-    assert!(cfg.firebase_refresh_token.is_none());
-    assert!(cfg.media_root.is_none());
+    let store = FileSecretStore::new(dir.join("config.json"));
+    let secrets = store.load().unwrap();
+    assert!(secrets.app_token.is_none());
+    assert!(secrets.firebase_refresh_token.is_none());
 }
 
 #[test]
-fn save_to_creates_parents_sets_0600_and_roundtrips() {
+fn file_secret_store_creates_parents_sets_0600_and_roundtrips() {
     let dir = unique_temp_dir("save_roundtrip");
     let path = dir.join("nested").join("config.json");
+    let store = FileSecretStore::new(path.clone());
 
-    let cfg = AppConfig {
+    let secrets = Secrets {
         app_token: Some("secret_app_token".to_string()),
         firebase_refresh_token: Some("secret_refresh".to_string()),
-        media_root: Some("/Freebox/Videos".to_string()),
     };
-    cfg.save_to(&path).unwrap();
+    store.save(&secrets).unwrap();
 
     #[cfg(unix)]
     {
@@ -80,25 +104,25 @@ fn save_to_creates_parents_sets_0600_and_roundtrips() {
         assert_eq!(mode, 0o600, "config.json must have 0600 permissions");
     }
 
-    let loaded = AppConfig::load_from(&path).unwrap();
+    let loaded = store.load().unwrap();
     assert_eq!(loaded.app_token.as_deref(), Some("secret_app_token"));
     assert_eq!(
         loaded.firebase_refresh_token.as_deref(),
         Some("secret_refresh")
     );
-    assert_eq!(loaded.media_root.as_deref(), Some("/Freebox/Videos"));
 
     let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn load_from_returns_json_error_on_corrupted_file() {
+fn file_secret_store_returns_json_error_on_corrupted_file() {
     let dir = unique_temp_dir("corrupted");
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("config.json");
     fs::write(&path, "{ invalid json").unwrap();
 
-    let err = AppConfig::load_from(&path).unwrap_err();
+    let store = FileSecretStore::new(path);
+    let err = store.load().unwrap_err();
     assert!(matches!(err, AppError::Json(_)));
 
     let _ = fs::remove_dir_all(&dir);

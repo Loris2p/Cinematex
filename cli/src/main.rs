@@ -12,7 +12,7 @@ mod models;
 mod tmdb;
 mod utils;
 use crate::cli::Commands;
-use crate::config::AppConfig;
+use crate::config::{FileSecretStore, SecretStore, Settings};
 use crate::errors::{AppError, Result};
 use crate::firebase::FirebaseClient;
 use crate::freebox::{FileType, FreeboxClient};
@@ -26,13 +26,14 @@ async fn main() -> Result<()> {
             println!("!TODO! Lancement TUI ... ")
         }
         Some(Commands::Auth) => {
-            let mut config = AppConfig::load()?;
-            if config.app_token.is_none() {
+            let store = FileSecretStore::default_store()?;
+            let mut secrets = store.load()?;
+            if secrets.app_token.is_none() {
                 let freebox_env = config::freebox_env()?;
                 let client = FreeboxClient::connect(freebox_env).await?;
                 let token = client.authorize("Cinematex CLI").await?;
-                config.app_token = Some(token);
-                config.save()?;
+                secrets.app_token = Some(token);
+                store.save(&secrets)?;
                 println!(
                     "Appairage Freebox réussi !\nPensez à activer les droits « Accès aux fichiers » et «Téléchargements » dans Freebox OS."
                 );
@@ -51,20 +52,21 @@ async fn main() -> Result<()> {
             let (project_id, api_key) = config::firebase_env()?;
             let mut fb = FirebaseClient::new(project_id, api_key)?;
             let refresh_token = fb.sign_in(email, &password).await?;
-            config.firebase_refresh_token = Some(refresh_token);
-            config.save()?;
+            secrets.firebase_refresh_token = Some(refresh_token);
+            store.save(&secrets)?;
             println!("Connecté à Firebase avec succès !");
         }
         Some(Commands::Torrent { .. }) => {
             todo!()
         }
         Some(Commands::Scan { path }) => {
-            let config = AppConfig::load()?;
+            let secrets = FileSecretStore::default_store()?.load()?;
+            let settings = Settings::load()?;
             let freebox_env = config::freebox_env()?;
-            let Some(app_token) = config.app_token.as_deref() else {
+            let Some(app_token) = secrets.app_token.as_deref() else {
                 return Err(AppError::Config("token d'application invalide".to_string()));
             };
-            let Some(target) = path.or(config.media_root) else {
+            let Some(target) = path.or(settings.freebox.media_root) else {
                 return Err(AppError::Config("chemin cible invalide".to_string()));
             };
             let mut client = FreeboxClient::connect(freebox_env).await?;

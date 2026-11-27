@@ -1,7 +1,10 @@
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, Serialize};
+use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::{env, fmt, fs};
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FreeboxSettings {
@@ -124,48 +127,65 @@ impl Settings {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct AppConfig {
+#[derive(Default, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct Secrets {
     pub app_token: Option<String>,
     pub firebase_refresh_token: Option<String>,
-    #[serde(default)]
-    pub media_root: Option<String>,
 }
-
-impl AppConfig {
-    fn config_path() -> Result<PathBuf> {
-        Ok(config_dir()?.join("config.json"))
+pub trait SecretStore {
+    fn load(&self) -> Result<Secrets>;
+    fn save(&self, secrets: &Secrets) -> Result<()>;
+}
+impl fmt::Debug for Secrets {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Secrets")
+            .field(
+                "app_token",
+                &(self.app_token.as_ref().map(|_| "[REDACTED]")),
+            )
+            .field(
+                "firebase_refresh_token",
+                &(self.firebase_refresh_token.as_ref().map(|_| "[REDACTED]")),
+            )
+            .finish()
     }
-    pub fn load() -> Result<Self> {
-        let path = Self::config_path()?;
-        Self::load_from(&path)
+}
+pub struct FileSecretStore {
+    path: PathBuf,
+}
+impl FileSecretStore {
+    pub fn default_store() -> Result<Self> {
+        let path = config_dir()?.join("config.json");
+        Ok(Self::new(path))
     }
-    fn load_from(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            Ok(Self::default())
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+impl SecretStore for FileSecretStore {
+    fn load(&self) -> Result<Secrets> {
+        if !self.path.exists() {
+            Ok(Secrets::default())
         } else {
-            let conf_str = fs::read_to_string(path)?;
-            Ok(serde_json::from_str(&conf_str)?)
+            let json_str = fs::read_to_string(&self.path)?;
+            Ok(serde_json::from_str(&json_str)?)
         }
     }
-    pub fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
-        self.save_to(&path)
-    }
-    fn save_to(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
+    fn save(&self, secrets: &Secrets) -> Result<()> {
+        if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
+        let json_str = serde_json::to_string_pretty(secrets)?;
+        fs::write(&self.path, json_str)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))?;
         }
         Ok(())
     }
 }
+
 pub fn firebase_env() -> Result<(&'static str, &'static str)> {
     let Some(fb_project_id) = option_env!("FIREBASE_PROJECT_ID").filter(|s| !s.is_empty()) else {
         return Err(AppError::Config(
